@@ -356,8 +356,7 @@ void SpLatex::multiplot(size_t ln, size_t indent, const std::string& cmdline)
                     std::ostringstream os;
                     for (size_t i = 0; i < groupcols.size(); ++i) {
                         if (i != 0) os << ',';
-                        os << escape_latex(groupfields[i]) << '='
-                           << escape_latex(rowgroup[i]);
+                        os << escape_latex(rowgroup[i]);
                     }
                     legendlist.push_back(os.str());
                 }
