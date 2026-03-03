@@ -96,6 +96,9 @@ public:
     //! Process % DEFMACRO commands
     void defmacro(size_t ln, size_t indent, const std::string& cmdline);
 
+    //! Process % FOREACH commands
+    void foreach(size_t ln, size_t indent, const std::string& cmdline);
+
     //! Process Textlines
     SpLatex(TextLines& lines);
 };
@@ -622,6 +625,66 @@ void SpLatex::defmacro(size_t ln, size_t indent, const std::string& cmdline)
     m_lines.replace(ln, eln, indent, output, "DEFMACRO");
 }
 
+//! Process % FOREACH commands
+void SpLatex::foreach(size_t ln, size_t indent, const std::string& cmdline)
+{
+    // extract FOREACH parameters: var IN (value1,value2,value3)
+    static const boost::regex
+        re_foreach("(\\w+)\\s+IN\\s+\\(([^)]+)\\).*");
+    boost::smatch rm_foreach;
+
+    if (!boost::regex_match(cmdline, rm_foreach, re_foreach)) {
+        OUT_THROW("FOREACH requires syntax: FOREACH var IN (value1,value2,value3), got: '" + cmdline + "'");
+    }
+
+    std::string var_name = rm_foreach[1].str();
+    std::string values_str = rm_foreach[2].str();
+
+    // split values by comma and trim whitespace
+    std::vector<std::string> values = split(values_str, ',');
+    std::for_each(values.begin(), values.end(), trim_inplace_ws);
+
+    // find the END FOREACH (scan through all lines looking for comment with END FOREACH)
+    const boost::regex re_end_foreach("[[:blank:]]*%+ END FOREACH.*");
+    size_t eln = ln;
+    
+    while (eln++ < m_lines.size()) {
+        if (is_comment_line(eln) >= 0 && boost::regex_match(m_lines[eln], re_end_foreach)) {
+            break;
+        }
+    }
+    --eln;
+
+    if (eln == m_lines.size()) {
+        OUT_THROW("FOREACH requires matching % END FOREACH");
+    }
+
+    // extract template lines between FOREACH and END FOREACH
+    std::vector<std::string> template_lines;
+    for (size_t i = ln; i < eln; ++i) {
+        template_lines.push_back(m_lines[i]);
+    }
+
+    // generate output by iterating through values
+    std::vector<std::string> output_lines;
+    for (size_t v = 0; v < values.size(); ++v) {
+        const std::string& value = values[v];
+        
+        // process each template line, replacing {var_name} with value
+        for (size_t t = 0; t < template_lines.size(); ++t) {
+            std::string line = template_lines[t];
+            
+            // replace {var_name} with current value
+            std::string placeholder = "{" + var_name + "}";
+            line = replace_all(line, placeholder, value);
+            
+            output_lines.push_back(line);
+        }
+    }
+
+    m_lines.replace(ln, eln + 1, indent, output_lines, "FOREACH");
+}
+
 //! process line-based file in place
 SpLatex::SpLatex(TextLines& lines)
     : m_lines(lines)
@@ -734,6 +797,11 @@ SpLatex::SpLatex(TextLines& lines)
         {
             OUT(ln << " % " << cmd);
             defmacro(ln, indent, cmd.substr(space_pos+1));
+        }
+        else if (first_word == "FOREACH")
+        {
+            OUT(ln << " % " << cmd);
+            foreach(ln, indent, cmd.substr(space_pos+1));
         }
         else
         {
